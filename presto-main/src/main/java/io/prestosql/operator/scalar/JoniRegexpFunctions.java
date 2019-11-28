@@ -21,6 +21,7 @@ import io.airlift.joni.exception.ValueException;
 import io.airlift.slice.DynamicSliceOutput;
 import io.airlift.slice.Slice;
 import io.airlift.slice.SliceOutput;
+import io.airlift.slice.SliceUtf8;
 import io.airlift.slice.Slices;
 import io.prestosql.spi.PrestoException;
 import io.prestosql.spi.block.Block;
@@ -306,5 +307,102 @@ public final class JoniRegexpFunctions
         if (group > region.numRegs - 1) {
             throw new PrestoException(INVALID_FUNCTION_ARGUMENT, format("Pattern has %d groups. Cannot access group %d", region.numRegs - 1, group));
         }
+    }
+
+    @ScalarFunction
+    @Description("returns the beginning position of the matched substring")
+    @LiteralParameters("x")
+    @SqlType(StandardTypes.INTEGER)
+    public static long regexpPosition(@SqlType("varchar(x)") Slice source, @SqlType(JoniRegexpType.NAME) JoniRegexp pattern)
+    {
+        return regexpPosition(source, pattern, 1);
+    }
+
+    @ScalarFunction
+    @Description("returns the beginning position of the matched substring from the specified starting position")
+    @LiteralParameters("x")
+    @SqlType(StandardTypes.INTEGER)
+    public static long regexpPosition(@SqlType("varchar(x)") Slice source,
+                                      @SqlType(JoniRegexpType.NAME) JoniRegexp pattern,
+                                      @SqlType(StandardTypes.INTEGER) long start)
+    {
+        return regexpPosition(source, pattern, start, 1);
+    }
+
+    @ScalarFunction
+    @Description("returns the beginning position of the nth occurrence substring from the specified starting position")
+    @LiteralParameters("x")
+    @SqlType(StandardTypes.INTEGER)
+    public static long regexpPosition(@SqlType("varchar(x)") Slice source,
+                                      @SqlType(JoniRegexpType.NAME) JoniRegexp pattern,
+                                      @SqlType(StandardTypes.INTEGER) long start,
+                                      @SqlType(StandardTypes.INTEGER) long occurrence)
+    {
+        // start should bigger than 0
+        if (start < 1) {
+            throw new PrestoException(INVALID_FUNCTION_ARGUMENT, "start position cannot small than 1");
+        }
+        if (occurrence < 1) {
+            throw new PrestoException(INVALID_FUNCTION_ARGUMENT, "occurrence cannot small than 1");
+        }
+        // return -1 if start is bigger than the length of source
+        if (start > SliceUtf8.countCodePoints(source)) {
+            return -1;
+        }
+
+        Matcher matcher = pattern.matcher(source.getBytes());
+        long count = 0;
+        // convert char position to byte position
+        // subtract 1 because codePointCount starts from zero
+        int nextStart = SliceUtf8.offsetOfCodePoint(source, (int) start - 1);
+        while (true) {
+            int offset = matcher.search(nextStart, source.length(), Option.DEFAULT);
+            // Check whether offset is negative, offset is -1 if no pattern was found or -2 if process was interrupted
+            if (offset < 0) {
+                return -1;
+            }
+
+            if (++count == occurrence) {
+                // Plus 1 because position returned start from 1
+                return SliceUtf8.countCodePoints(source, 0, matcher.getBegin()) + 1;
+            }
+
+            if (matcher.getEnd() == matcher.getBegin()) {
+                nextStart = matcher.getEnd() + SliceUtf8.lengthOfCodePointFromStartByte(source.getByte(matcher.getBegin()));
+            }
+            else {
+                nextStart = matcher.getEnd();
+            }
+        }
+    }
+
+    @ScalarFunction
+    @Description("returns the number of times that a pattern occurs in a string")
+    @LiteralParameters("x")
+    @SqlType(StandardTypes.INTEGER)
+    public static long regexpCount(@SqlType("varchar(x)") Slice source, @SqlType(JoniRegexpType.NAME) JoniRegexp pattern)
+    {
+        Matcher matcher = pattern.matcher(source.getBytes());
+
+        int count = 0;
+        // Start from zero, implies the first byte
+        int nextStart = 0;
+        while (true) {
+            // Mather bug: search should return -1 if start equals length of source but start actually
+            int offset = matcher.search(nextStart, source.length(), Option.DEFAULT);
+            if (offset < 0 || offset >= source.length()) {
+                break;
+            }
+
+            if (matcher.getEnd() == matcher.getBegin()) {
+                nextStart = matcher.getEnd() + SliceUtf8.lengthOfCodePointFromStartByte(source.getByte(matcher.getBegin()));
+            }
+            else {
+                nextStart = matcher.getEnd();
+            }
+            count++;
+        }
+
+        return count;
     }
 }

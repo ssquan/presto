@@ -13,8 +13,11 @@
  */
 package io.prestosql.operator.scalar;
 
+import com.google.re2j.Matcher;
 import io.airlift.slice.Slice;
+import io.airlift.slice.SliceUtf8;
 import io.airlift.slice.Slices;
+import io.prestosql.spi.PrestoException;
 import io.prestosql.spi.block.Block;
 import io.prestosql.spi.function.Description;
 import io.prestosql.spi.function.LiteralParameters;
@@ -25,6 +28,8 @@ import io.prestosql.spi.type.StandardTypes;
 import io.prestosql.type.Constraint;
 import io.prestosql.type.Re2JRegexp;
 import io.prestosql.type.Re2JRegexpType;
+
+import static io.prestosql.spi.StandardErrorCode.INVALID_FUNCTION_ARGUMENT;
 
 public final class Re2JRegexpFunctions
 {
@@ -108,5 +113,84 @@ public final class Re2JRegexpFunctions
     public static Block regexpSplit(@SqlType("varchar(x)") Slice source, @SqlType(Re2JRegexpType.NAME) Re2JRegexp pattern)
     {
         return pattern.split(source);
+    }
+
+    @ScalarFunction
+    @Description("returns the beginning position of the matched substring")
+    @LiteralParameters("x")
+    @SqlType(StandardTypes.INTEGER)
+    public static long regexpPosition(@SqlType("varchar(x)") Slice source, @SqlType(Re2JRegexpType.NAME) Re2JRegexp pattern)
+    {
+        return regexpPosition(source, pattern, 1);
+    }
+
+    @ScalarFunction
+    @Description("returns the beginning position of the matched substring from the specified starting position")
+    @LiteralParameters("x")
+    @SqlType(StandardTypes.INTEGER)
+    public static long regexpPosition(@SqlType("varchar(x)") Slice source,
+                                      @SqlType(Re2JRegexpType.NAME) Re2JRegexp pattern,
+                                      @SqlType(StandardTypes.INTEGER) long start)
+    {
+        return regexpPosition(source, pattern, start, 1);
+    }
+
+    @ScalarFunction
+    @Description("returns the beginning position of the nth occurrence substring from the specified starting position")
+    @LiteralParameters("x")
+    @SqlType(StandardTypes.INTEGER)
+    public static long regexpPosition(@SqlType("varchar(x)") Slice source,
+                                      @SqlType(Re2JRegexpType.NAME) Re2JRegexp pattern,
+                                      @SqlType(StandardTypes.INTEGER) long start,
+                                      @SqlType(StandardTypes.INTEGER) long occurrence)
+    {
+        // start should bigger than 0
+        if (start < 1) {
+            throw new PrestoException(INVALID_FUNCTION_ARGUMENT, "start position cannot small than 1");
+        }
+        if (occurrence < 1) {
+            throw new PrestoException(INVALID_FUNCTION_ARGUMENT, "occurrence cannot small than 1");
+        }
+        // return -1 if start is bigger than the length of source
+        if (start > SliceUtf8.countCodePoints(source)) {
+            return -1;
+        }
+
+        int startBytePosition = SliceUtf8.offsetOfCodePoint(source, (int) start - 1);
+        int length = source.length() - startBytePosition;
+        Matcher matcher = pattern.matcher(source.slice(startBytePosition, length));
+        long count = 0;
+        while (matcher.find()) {
+            if (++count == occurrence) {
+                // Plus 1 because position returned start from 1
+                return SliceUtf8.countCodePoints(source, 0, startBytePosition + matcher.start()) + 1;
+            }
+        }
+
+        return -1;
+    }
+
+    @ScalarFunction
+    @Description("returns the number of times that a pattern occurs in a string")
+    @LiteralParameters("x")
+    @SqlType(StandardTypes.INTEGER)
+    public static long regexpCount(@SqlType("varchar(x)") Slice source, @SqlType(Re2JRegexpType.NAME) Re2JRegexp pattern)
+    {
+        Matcher matcher = pattern.matcher(source);
+
+        int count = 0;
+        int nextStart = 0;
+        while (matcher.find(nextStart) && nextStart < source.length()) {
+            if (matcher.start() == matcher.end()) {
+                nextStart = matcher.end() + SliceUtf8.lengthOfCodePointFromStartByte(source.getByte(matcher.start()));
+            }
+            else {
+                nextStart = matcher.end();
+            }
+
+            count++;
+        }
+
+        return count;
     }
 }

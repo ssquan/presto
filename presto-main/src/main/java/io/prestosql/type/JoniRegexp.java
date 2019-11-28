@@ -45,6 +45,11 @@ public final class JoniRegexp
         return regex.matcher(bytes);
     }
 
+    public int length()
+    {
+        return toString().length();
+    }
+
     @Override
     public String toString()
     {

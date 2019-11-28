@@ -19,6 +19,7 @@ import io.airlift.slice.Slices;
 import io.prestosql.spi.function.ScalarFunction;
 import io.prestosql.spi.function.SqlType;
 import io.prestosql.spi.type.ArrayType;
+import io.prestosql.spi.type.IntegerType;
 import io.prestosql.spi.type.StandardTypes;
 import io.prestosql.sql.analyzer.FeaturesConfig;
 import io.prestosql.sql.analyzer.RegexLibrary;
@@ -235,5 +236,71 @@ public abstract class AbstractTestRegexpFunctions
         assertFunction("REGEXP_SPLIT('a,b,c,d', ',')", new ArrayType(createVarcharType(7)), ImmutableList.of("a", "b", "c", "d"));
         assertFunction("REGEXP_SPLIT(',,a,,,b,c,d,,', ',')", new ArrayType(createVarcharType(13)), ImmutableList.of("", "", "a", "", "", "b", "c", "d", "", ""));
         assertFunction("REGEXP_SPLIT(',,,', ',')", new ArrayType(createVarcharType(3)), ImmutableList.of("", "", "", ""));
+    }
+
+    @Test
+    public void testRegexpCount()
+    {
+        assertFunction("REGEXP_COUNT('a.b:c;d', '[\\.:;]')", IntegerType.INTEGER, 3);
+        assertFunction("REGEXP_COUNT('a.b:c;d', '\\.')", IntegerType.INTEGER, 1);
+        assertFunction("REGEXP_COUNT('a.b:c;d', ':')", IntegerType.INTEGER, 1);
+        assertFunction("REGEXP_COUNT('a,b,c', ',')", IntegerType.INTEGER, 2);
+        assertFunction("REGEXP_COUNT('a1b2c3d', '\\d')", IntegerType.INTEGER, 3);
+        assertFunction("REGEXP_COUNT('a1b2346c3d', '\\d+')", IntegerType.INTEGER, 3);
+        assertFunction("REGEXP_COUNT('abcd', 'x')", IntegerType.INTEGER, 0);
+
+        assertFunction("REGEXP_COUNT('', 'x')", IntegerType.INTEGER, 0);
+
+        //Non-unicode string
+        assertFunction("REGEXP_COUNT('君子矜而不争，党而不群', '不')", IntegerType.INTEGER, 2);
+
+        // empty pattern
+        assertFunction("REGEXP_COUNT('abcd', '')", IntegerType.INTEGER, 4);
+    }
+
+    @Test
+    public void testRegexpPosition()
+    {
+        assertFunction("REGEXP_POSITION('a.b:c;d', '[\\.:;]')", IntegerType.INTEGER, 2);
+        assertFunction("REGEXP_POSITION('a.b:c;d', '\\.')", IntegerType.INTEGER, 2);
+        assertFunction("REGEXP_POSITION('a.b:c;d', ':')", IntegerType.INTEGER, 4);
+        assertFunction("REGEXP_POSITION('a,b,c', ',')", IntegerType.INTEGER, 2);
+        assertFunction("REGEXP_POSITION('a1b2c3d', '\\d')", IntegerType.INTEGER, 2);
+
+        // match from specified position
+        assertFunction("REGEXP_POSITION('a,b,c', ',', 3)", IntegerType.INTEGER, 4);
+        assertFunction("REGEXP_POSITION('a1b2c3d', '\\d', 5)", IntegerType.INTEGER, 6);
+
+        // match the n-th occurrence from from specified position
+        assertFunction("REGEXP_POSITION('a1b2c3d4e', '\\d', 4, 2)", IntegerType.INTEGER, 6);
+        assertFunction("REGEXP_POSITION('a1b2c3d', '\\d', 4, 3)", IntegerType.INTEGER, -1);
+
+        // empty pattern
+        assertInvalidFunction("REGEXP_POSITION('a1b2c3d', '')", INVALID_FUNCTION_ARGUMENT);
+        assertInvalidFunction("REGEXP_POSITION('a1b2c3d', '', 1)", INVALID_FUNCTION_ARGUMENT);
+        assertInvalidFunction("REGEXP_POSITION('a1b2c3d', '', 1, 2)", INVALID_FUNCTION_ARGUMENT);
+        assertInvalidFunction("REGEXP_POSITION('a1b2c3d', '', 2, 2)", INVALID_FUNCTION_ARGUMENT);
+        assertInvalidFunction("REGEXP_POSITION('a1b2c3d', '', 4, 2)", INVALID_FUNCTION_ARGUMENT);
+
+        //Non-unicode string
+        assertFunction("REGEXP_POSITION('行成于思str而毁123于随', '于', 3, 2)", IntegerType.INTEGER, 13);
+
+        // empty source
+        assertFunction("REGEXP_POSITION('', ',')", IntegerType.INTEGER, -1);
+        assertFunction("REGEXP_POSITION('', ',', 4)", IntegerType.INTEGER, -1);
+        assertFunction("REGEXP_POSITION('', ',', 4, 2)", IntegerType.INTEGER, -1);
+
+        // boundary test
+        assertFunction("REGEXP_POSITION('a,b,c', ',', 2)", IntegerType.INTEGER, 2);
+        assertFunction("REGEXP_POSITION('a1b2c3d', '\\d', 4)", IntegerType.INTEGER, 4);
+        assertFunction("REGEXP_POSITION('有朋$%X自9远方来', '\\d', 7)", IntegerType.INTEGER, 7);
+        assertFunction("REGEXP_POSITION('有朋$%X自9远方9来', '\\d', 10, 1)", IntegerType.INTEGER, 10);
+        assertFunction("REGEXP_POSITION('有朋$%X自9远方9来', '\\d', 10, 2)", IntegerType.INTEGER, -1);
+        assertFunction("REGEXP_POSITION('a,b,c', ',', 1000)", IntegerType.INTEGER, -1);
+        assertFunction("REGEXP_POSITION('a,b,c', ',', 8)", IntegerType.INTEGER, -1);
+        assertFunction("REGEXP_POSITION('有朋$%X自9远方9来', '来', 999)", IntegerType.INTEGER, -1);
+
+        assertInvalidFunction("REGEXP_POSITION('有朋$%X自9远方9来', '来', 1, 0)", INVALID_FUNCTION_ARGUMENT);
+        assertInvalidFunction("REGEXP_POSITION('有朋$%X自9远方9来', '来', 1, -1)", INVALID_FUNCTION_ARGUMENT);
     }
 }
