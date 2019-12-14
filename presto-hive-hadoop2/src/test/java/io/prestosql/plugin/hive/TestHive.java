@@ -18,8 +18,6 @@ import org.testng.SkipException;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Parameters;
 
-import java.net.UnknownHostException;
-
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -38,7 +36,6 @@ public class TestHive
     })
     @BeforeClass
     public void initialize(String host, int port, String databaseName, int hiveVersionMajor, String timeZone)
-            throws UnknownHostException
     {
         String hadoopMasterIp = System.getProperty("hadoop-master-ip");
         if (hadoopMasterIp != null) {
@@ -88,13 +85,6 @@ public class TestHive
     public void testTypesOrc()
             throws Exception
     {
-        if (getHiveVersionMajor() >= 3) {
-            // TODO (https://github.com/prestosql/presto/issues/1218)
-            assertThatThrownBy(super::testTypesOrc)
-                    .isInstanceOf(AssertionError.class)
-                    .hasMessage("expected [2011-05-06 01:23:09.123] but found [2011-05-06 07:08:09.123]");
-            return;
-        }
         super.testTypesOrc();
     }
 

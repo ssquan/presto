@@ -75,6 +75,7 @@ import static com.google.common.collect.Iterables.transform;
 import static io.prestosql.plugin.cassandra.CassandraErrorCode.CASSANDRA_VERSION_ERROR;
 import static io.prestosql.plugin.cassandra.CassandraType.isFullySupported;
 import static io.prestosql.plugin.cassandra.CassandraType.toCassandraType;
+import static io.prestosql.plugin.cassandra.util.CassandraCqlUtils.selectDistinctFrom;
 import static io.prestosql.plugin.cassandra.util.CassandraCqlUtils.validSchemaName;
 import static io.prestosql.spi.StandardErrorCode.NOT_SUPPORTED;
 import static java.lang.String.format;
@@ -410,14 +411,14 @@ public class NativeCassandraSession
                     buffer.put(component);
                 }
                 CassandraColumnHandle columnHandle = partitionKeyColumns.get(i);
-                NullableValue keyPart = CassandraType.getColumnValueForPartitionKey(row, i, columnHandle.getCassandraType());
+                NullableValue keyPart = columnHandle.getCassandraType().getColumnValue(row, i);
                 map.put(columnHandle, keyPart);
                 if (i > 0) {
                     stringBuilder.append(" AND ");
                 }
                 stringBuilder.append(CassandraCqlUtils.validColumnName(columnHandle.getName()));
                 stringBuilder.append(" = ");
-                stringBuilder.append(CassandraType.getColumnValueForCql(row, i, columnHandle.getCassandraType()));
+                stringBuilder.append(columnHandle.getCassandraType().getColumnValueForCql(row, i));
             }
             buffer.flip();
             byte[] key = new byte[buffer.limit()];
@@ -454,7 +455,7 @@ public class NativeCassandraSession
         CassandraTableHandle tableHandle = table.getTableHandle();
         List<CassandraColumnHandle> partitionKeyColumns = table.getPartitionKeyColumns();
 
-        Select partitionKeys = CassandraCqlUtils.selectDistinctFrom(tableHandle, partitionKeyColumns);
+        Select partitionKeys = selectDistinctFrom(tableHandle, partitionKeyColumns);
         addWhereInClauses(partitionKeys.where(), partitionKeyColumns, filterPrefixes);
 
         return execute(partitionKeys).all();
@@ -469,7 +470,7 @@ public class NativeCassandraSession
 
         ImmutableList.Builder<Row> rowList = ImmutableList.builder();
         for (List<Object> combination : filterCombinations) {
-            Select partitionKeys = CassandraCqlUtils.selectDistinctFrom(tableHandle, partitionKeyColumns);
+            Select partitionKeys = selectDistinctFrom(tableHandle, partitionKeyColumns);
             addWhereClause(partitionKeys.where(), partitionKeyColumns, combination);
 
             List<Row> resultRows = execute(partitionKeys).all();
@@ -508,7 +509,7 @@ public class NativeCassandraSession
     public List<SizeEstimate> getSizeEstimates(String keyspaceName, String tableName)
     {
         checkSizeEstimatesTableExist();
-        Statement statement = select("range_start", "range_end", "mean_partition_size", "partitions_count")
+        Statement statement = select("partitions_count")
                 .from(SYSTEM, SIZE_ESTIMATES)
                 .where(eq("keyspace_name", keyspaceName))
                 .and(eq("table_name", tableName));
@@ -516,11 +517,7 @@ public class NativeCassandraSession
         ResultSet result = executeWithSession(session -> session.execute(statement));
         ImmutableList.Builder<SizeEstimate> estimates = ImmutableList.builder();
         for (Row row : result.all()) {
-            SizeEstimate estimate = new SizeEstimate(
-                    row.getString("range_start"),
-                    row.getString("range_end"),
-                    row.getLong("mean_partition_size"),
-                    row.getLong("partitions_count"));
+            SizeEstimate estimate = new SizeEstimate(row.getLong("partitions_count"));
             estimates.add(estimate);
         }
 

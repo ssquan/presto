@@ -5,7 +5,7 @@ on: [push, pull_request]
 env:
   MAVEN_OPTS: "-Xmx512M -XX:+ExitOnOutOfMemoryError"
   MAVEN_INSTALL_OPTS: "-Xmx2G -XX:+ExitOnOutOfMemoryError"
-  MAVEN_FAST_INSTALL: "-B -e -V -DskipTests -Dair.check.skip-all"
+  MAVEN_FAST_INSTALL: "-B -e -V -T C1 -DskipTests -Dair.check.skip-all"
 
 jobs:
   maven-checks:
@@ -53,6 +53,7 @@ jobs:
   hive-tests:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         config: [
           config-empty,
@@ -67,7 +68,7 @@ jobs:
       - name: Install Hive Module
         run: |
           export MAVEN_OPTS="${MAVEN_INSTALL_OPTS}"
-          ./mvnw install ${MAVEN_FAST_INSTALL} -pl presto-hive-hadoop2 -am
+          ./mvnw install ${MAVEN_FAST_INSTALL} -am -pl presto-hive-hadoop2
       - name: Run Hive Tests
         run: |
           source presto-product-tests/conf/product-tests-${{ matrix.config }}.sh &&
@@ -83,27 +84,13 @@ jobs:
       - name: Install Kudu Module
         run: |
           export MAVEN_OPTS="${MAVEN_INSTALL_OPTS}"
-          ./mvnw install ${MAVEN_FAST_INSTALL} -pl presto-kudu -am
+          ./mvnw install ${MAVEN_FAST_INSTALL} -am -pl presto-kudu
       - name: Run Kudu Tests -- disable InferSchema
         run: presto-kudu/bin/run_kudu_tests.sh "null"
       - name: Run Kudu Tests -- enable InferSchema, empty prefix
         run: presto-kudu/bin/run_kudu_tests.sh ""
       - name: Run Kudu Tests -- enable InferSchema, standard prefix
         run: presto-kudu/bin/run_kudu_tests.sh "presto::"
-
-  presto-tests-ci-only:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
-      - uses: actions/setup-java@v1
-        with:
-          java-version: 8
-      - name: Maven Install
-        run: |
-          export MAVEN_OPTS="${MAVEN_INSTALL_OPTS}"
-          ./mvnw install ${MAVEN_FAST_INSTALL} -pl presto-tests -am
-      - name: Maven Tests
-        run: ./mvnw test -B -e -Dair.check.skip-all -pl presto-tests -P ci-only
 
   test-other-modules:
     runs-on: ubuntu-latest
@@ -119,7 +106,7 @@ jobs:
       - name: Maven Tests
         run: |
           ./mvnw test -B -e -Dair.check.skip-all -pl '
-            !presto-main,!presto-testing,
+            !presto-main,
             !presto-tests,
             !presto-raptor-legacy,
             !presto-accumulo,
@@ -129,20 +116,22 @@ jobs:
             !presto-redis,
             !presto-sqlserver,!presto-postgresql,!presto-mysql,
             !presto-phoenix,!presto-iceberg,
-            !presto-kudu,
             !presto-docs,!presto-server,!presto-server-rpm'
 
   test-modules:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         modules: [
-          "presto-main,presto-testing",
+          "presto-main",
           "presto-tests",
+          "presto-tests -P ci-only",
           "presto-raptor-legacy",
           "presto-accumulo",
           "presto-cassandra",
-          "presto-hive,presto-orc,presto-parquet",
+          "presto-hive,presto-orc",
+          "presto-hive,presto-parquet -P test-parquet",
           "presto-mongodb,presto-kafka,presto-elasticsearch",
           "presto-redis",
           "presto-sqlserver,presto-postgresql,presto-mysql",
@@ -156,13 +145,14 @@ jobs:
       - name: Maven Install
         run: |
           export MAVEN_OPTS="${MAVEN_INSTALL_OPTS}"
-          ./mvnw install ${MAVEN_FAST_INSTALL} -pl '${{ matrix.modules }}' -am
+          ./mvnw install ${MAVEN_FAST_INSTALL} -am -pl $(echo '${{ matrix.modules }}' | cut -d' ' -f1)
       - name: Maven Tests
-        run: ./mvnw test -B -e -Dair.check.skip-all -pl '${{ matrix.modules }}'
+        run: ./mvnw test -B -e -Dair.check.skip-all -pl ${{ matrix.modules }}
 
   product-tests:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         config: [
           config-empty,

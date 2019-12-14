@@ -42,11 +42,6 @@ public class AllowAllAccessControl
     }
 
     @Override
-    public void checkCanAccessCatalog(Identity identity, String catalogName)
-    {
-    }
-
-    @Override
     public void checkCanCreateSchema(SecurityContext context, CatalogSchemaName schemaName)
     {
     }
@@ -141,6 +136,11 @@ public class AllowAllAccessControl
 
     @Override
     public void checkCanCreateView(SecurityContext context, QualifiedObjectName viewName)
+    {
+    }
+
+    @Override
+    public void checkCanRenameView(SecurityContext context, QualifiedObjectName viewName, QualifiedObjectName newViewName)
     {
     }
 

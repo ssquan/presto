@@ -16,10 +16,13 @@ package io.prestosql.plugin.postgresql;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import io.airlift.json.JsonCodec;
 import io.prestosql.Session;
+import io.prestosql.plugin.jdbc.UnsupportedTypeHandling;
 import io.prestosql.spi.type.ArrayType;
 import io.prestosql.spi.type.TimeZoneKey;
 import io.prestosql.testing.AbstractTestQueryFramework;
+import io.prestosql.testing.QueryRunner;
 import io.prestosql.testing.TestingSession;
 import io.prestosql.testing.datatype.CreateAndInsertDataSetup;
 import io.prestosql.testing.datatype.CreateAndPrestoInsertDataSetup;
@@ -29,6 +32,7 @@ import io.prestosql.testing.datatype.DataType;
 import io.prestosql.testing.datatype.DataTypeTest;
 import io.prestosql.testing.sql.JdbcSqlExecutor;
 import io.prestosql.testing.sql.PrestoSqlExecutor;
+import io.prestosql.testing.sql.TestTable;
 import org.testng.annotations.AfterClass;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
@@ -51,6 +55,10 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.io.BaseEncoding.base16;
+import static io.airlift.json.JsonCodec.listJsonCodec;
+import static io.airlift.json.JsonCodec.mapJsonCodec;
+import static io.prestosql.plugin.jdbc.BaseJdbcPropertiesProvider.UNSUPPORTED_TYPE_HANDLING;
+import static io.prestosql.plugin.jdbc.UnsupportedTypeHandling.CONVERT_TO_VARCHAR;
 import static io.prestosql.plugin.postgresql.PostgreSqlConfig.ArrayMapping.AS_ARRAY;
 import static io.prestosql.plugin.postgresql.PostgreSqlConfig.ArrayMapping.AS_JSON;
 import static io.prestosql.plugin.postgresql.PostgreSqlQueryRunner.createPostgreSqlQueryRunner;
@@ -90,7 +98,9 @@ import static java.util.stream.Collectors.toList;
 public class TestPostgreSqlTypeMapping
         extends AbstractTestQueryFramework
 {
-    private final TestingPostgreSqlServer postgreSqlServer;
+    private static final JsonCodec<List<Map<String, String>>> HSTORE_CODEC = listJsonCodec(mapJsonCodec(String.class, String.class));
+
+    private TestingPostgreSqlServer postgreSqlServer;
 
     private LocalDateTime beforeEpoch;
     private LocalDateTime epoch;
@@ -110,18 +120,15 @@ public class TestPostgreSqlTypeMapping
     private ZoneId kathmandu;
     private LocalDateTime timeGapInKathmandu;
 
-    public TestPostgreSqlTypeMapping()
+    @Override
+    protected QueryRunner createQueryRunner()
+            throws Exception
     {
-        this(new TestingPostgreSqlServer());
-    }
-
-    private TestPostgreSqlTypeMapping(TestingPostgreSqlServer postgreSqlServer)
-    {
-        super(() -> createPostgreSqlQueryRunner(
+        this.postgreSqlServer = new TestingPostgreSqlServer();
+        return createPostgreSqlQueryRunner(
                 postgreSqlServer,
-                ImmutableMap.of("jdbc-types-mapped-to-varchar", "tsrange, inet"),
-                ImmutableList.of()));
-        this.postgreSqlServer = postgreSqlServer;
+                ImmutableMap.of("jdbc-types-mapped-to-varchar", "Tsrange, Inet" /* make sure that types are compared case insensitively */),
+                ImmutableList.of());
     }
 
     @AfterClass(alwaysRun = true)
@@ -320,6 +327,19 @@ public class TestPostgreSqlTypeMapping
                     sessionWithArrayAsArray(),
                     "SELECT * FROM tpch.test_forced_varchar_mapping",
                     "VALUES ('[\"2010-01-01 14:30:00\",\"2010-01-01 15:30:00\")','172.0.0.1',ARRAY['[\"2010-01-01 14:30:00\",\"2010-01-01 15:30:00\")'])");
+
+            // test predicate pushdown to column that has forced varchar mapping
+            assertQuery(
+                    "SELECT 1 FROM tpch.test_forced_varchar_mapping WHERE tsrange_col = '[\"2010-01-01 14:30:00\",\"2010-01-01 15:30:00\")'",
+                    "VALUES 1");
+            assertQuery(
+                    "SELECT 1 FROM tpch.test_forced_varchar_mapping WHERE tsrange_col = 'some value'",
+                    "SELECT 1 WHERE false");
+
+            // test insert into column that has forced varchar mapping
+            assertQueryFails(
+                    "INSERT INTO tpch.test_forced_varchar_mapping (tsrange_col) VALUES ('some value')",
+                    "Underlying type that is mapped to VARCHAR is not supported for INSERT: tsrange");
         }
         finally {
             jdbcSqlExecutor.execute("DROP TABLE tpch.test_forced_varchar_mapping");
@@ -327,9 +347,18 @@ public class TestPostgreSqlTypeMapping
     }
 
     @Test
-    public void testDecimalExceedingPrecisionMax()
+    public void testDecimalExceedingPrecisionMaxIgnored()
     {
-        testUnsupportedDataType("decimal(50,0)");
+        testUnsupportedDataTypeAsIgnored("decimal(50,0)", "12345678901234567890123456789012345678901234567890");
+    }
+
+    @Test
+    public void testDecimalExceedingPrecisionMaxConvertedToVarchar()
+    {
+        testUnsupportedDataTypeConvertedToVarchar(
+                "decimal(50,0)",
+                "12345678901234567890123456789012345678901234567890",
+                "'12345678901234567890123456789012345678901234567890'");
     }
 
     @Test
@@ -515,12 +544,52 @@ public class TestPostgreSqlTypeMapping
                 .execute(getQueryRunner(), session, postgresCreateAndInsert("tpch.test_integer_array_as_json"));
 
         DataTypeTest.create()
+                .addRoundTrip(arrayAsJsonDataType("double precision[]"), null)
+                .addRoundTrip(arrayAsJsonDataType("double precision[]"), "[[[1.1,2.2,3.3],[4.4,5.5,6.6]]]")
+                .addRoundTrip(arrayAsJsonDataType("double precision[100][100][100]"), "[42.3]")
+                .addRoundTrip(arrayAsJsonDataType("double precision[]"), "[[[null,null]]]")
+                .addRoundTrip(arrayAsJsonDataType("double precision[]"), "[]")
+                .addRoundTrip(arrayAsJsonDataType("_float8"), "[]")
+                .addRoundTrip(arrayAsJsonDataType("_float8"), "[[1.1],[2.2]]")
+                .execute(getQueryRunner(), session, postgresCreateAndInsert("tpch.test_double_array_as_json"));
+
+        DataTypeTest.create()
+                .addRoundTrip(arrayAsJsonDataType("real[]"), null)
+                .addRoundTrip(arrayAsJsonDataType("real[]"), "[[[1.1,2.2,3.3],[4.4,5.5,6.6]]]")
+                .addRoundTrip(arrayAsJsonDataType("real[100][100][100]"), "[42.3]")
+                .addRoundTrip(arrayAsJsonDataType("real[]"), "[[[null,null]]]")
+                .addRoundTrip(arrayAsJsonDataType("real[]"), "[]")
+                .addRoundTrip(arrayAsJsonDataType("_float4"), "[]")
+                .addRoundTrip(arrayAsJsonDataType("_float4"), "[[1.1],[2.2]]")
+                .execute(getQueryRunner(), session, postgresCreateAndInsert("tpch.test_real_array_as_json"));
+
+        DataTypeTest.create()
                 .addRoundTrip(arrayAsJsonDataType("varchar[]"), null)
                 .addRoundTrip(arrayAsJsonDataType("varchar[]"), "[\"text\"]")
                 .addRoundTrip(arrayAsJsonDataType("_text"), "[[\"one\",\"two\"],[\"three\",\"four\"]]")
                 .addRoundTrip(arrayAsJsonDataType("_text"), "[[\"one\",null]]")
                 .addRoundTrip(arrayAsJsonDataType("_text"), "[]")
                 .execute(getQueryRunner(), session, postgresCreateAndInsert("tpch.test_varchar_array_as_json"));
+
+        DataTypeTest.create()
+                .addRoundTrip(arrayAsJsonDataType("date[]"), null)
+                .addRoundTrip(arrayAsJsonDataType("date[]"), "[\"2019-01-02\"]")
+                .addRoundTrip(arrayAsJsonDataType("date[]"), "[null,null]")
+                .execute(getQueryRunner(), session, postgresCreateAndInsert("tpch.test_timestamp_array_as_json"));
+
+        DataTypeTest.create()
+                .addRoundTrip(arrayAsJsonDataType("timestamp[]"), null)
+                .addRoundTrip(arrayAsJsonDataType("timestamp[]"), "[\"2019-01-02 03:04:05.789\"]")
+                .addRoundTrip(arrayAsJsonDataType("timestamp[]"), "[null,null]")
+                .execute(getQueryRunner(), session, postgresCreateAndInsert("tpch.test_timestamp_array_as_json"));
+
+        DataTypeTest.create()
+                .addRoundTrip(arrayAsJsonDataType("hstore[]"), null)
+                .addRoundTrip(arrayAsJsonDataType("hstore[]"), "[]")
+                .addRoundTrip(arrayAsJsonDataType("hstore[]"), "[null,null]")
+                .addRoundTrip(hstoreArrayAsJsonDataType(), "[{\"a\":\"1\",\"b\":\"2\"},{\"a\":\"3\",\"d\":\"4\"}]")
+                .addRoundTrip(hstoreArrayAsJsonDataType(), "[{\"a\":null,\"b\":\"2\"}]")
+                .execute(getQueryRunner(), session, postgresCreateAndInsert("tpch.test_hstore_array_as_json"));
     }
 
     private static <E> DataType<List<E>> arrayDataType(DataType<E> elementType)
@@ -552,6 +621,17 @@ public class TestPostgreSqlTypeMapping
                         .replace("[", "ARRAY[")
                         .replace("\"", "'")
                         + "::" + insertType,
+                identity());
+    }
+
+    private static DataType<String> hstoreArrayAsJsonDataType()
+    {
+        return dataType(
+                "hstore[]",
+                JSON,
+                json -> HSTORE_CODEC.fromJson(json).stream()
+                        .map(TestPostgreSqlTypeMapping::hstoreLiteral)
+                        .collect(joining(",", "ARRAY[", "]")),
                 identity());
     }
 
@@ -853,18 +933,75 @@ public class TestPostgreSqlTypeMapping
                 .addRoundTrip(uuidDataType, java.util.UUID.fromString("123e4567-e89b-12d3-a456-426655440000"));
     }
 
-    private void testUnsupportedDataType(String databaseDataType)
+    private void testUnsupportedDataTypeAsIgnored(String dataTypeName, String databaseValue)
     {
         JdbcSqlExecutor jdbcSqlExecutor = new JdbcSqlExecutor(postgreSqlServer.getJdbcUrl());
-        jdbcSqlExecutor.execute(format("CREATE TABLE tpch.test_unsupported_data_type(key varchar(5), unsupported_column %s)", databaseDataType));
-        try {
+        try (TestTable table = new TestTable(
+                jdbcSqlExecutor,
+                "tpch.unsupported_type",
+                format("(key varchar(5), unsupported_column %s)", dataTypeName),
+                ImmutableList.of(
+                        "'1', NULL",
+                        "'2', " + databaseValue))) {
+            assertQuery("SELECT * FROM " + table.getName(), "VALUES 1, 2");
             assertQuery(
-                    "SELECT column_name FROM information_schema.columns WHERE table_schema = 'tpch' AND table_name = 'test_unsupported_data_type'",
-                    "VALUES 'key'"); // no 'unsupported_column'
+                    "DESC " + table.getName(),
+                    "VALUES ('key', 'varchar(5)','', '')"); // no 'unsupported_column'
+
+            assertUpdate(format("INSERT INTO %s VALUES '3'", table.getName()), 1);
+            assertQuery("SELECT * FROM " + table.getName(), "VALUES '1', '2', '3'");
         }
-        finally {
-            jdbcSqlExecutor.execute("DROP TABLE tpch.test_unsupported_data_type");
+    }
+
+    private void testUnsupportedDataTypeConvertedToVarchar(String dataTypeName, String databaseValue, String prestoValue)
+    {
+        JdbcSqlExecutor jdbcSqlExecutor = new JdbcSqlExecutor(postgreSqlServer.getJdbcUrl());
+        try (TestTable table = new TestTable(
+                jdbcSqlExecutor,
+                "tpch.unsupported_type",
+                format("(key varchar(5), unsupported_column %s)", dataTypeName),
+                ImmutableList.of(
+                        "1, NULL",
+                        "2, " + databaseValue))) {
+            Session convertToVarchar = withUnsupportedType(CONVERT_TO_VARCHAR);
+            assertQuery(
+                    convertToVarchar,
+                    "SELECT * FROM " + table.getName(),
+                    format("VALUES ('1', NULL), ('2', %s)", prestoValue));
+            assertQuery(
+                    convertToVarchar,
+                    format("SELECT key FROM %s WHERE unsupported_column = %s", table.getName(), prestoValue),
+                    "VALUES '2'");
+            assertQuery(
+                    convertToVarchar,
+                    "DESC " + table.getName(),
+                    "VALUES " +
+                            "('key', 'varchar(5)', '', ''), " +
+                            "('unsupported_column', 'varchar', '', '')");
+            assertQueryFails(
+                    convertToVarchar,
+                    format("INSERT INTO %s (key, unsupported_column) VALUES (3, NULL)", table.getName()),
+                    "Insert query has mismatched column types: Table: \\[varchar\\(5\\), varchar\\], Query: \\[integer, unknown\\]");
+            assertQueryFails(
+                    convertToVarchar,
+                    format("INSERT INTO %s (key, unsupported_column) VALUES (4, %s)", table.getName(), prestoValue),
+                    "Insert query has mismatched column types: Table: \\[varchar\\(5\\), varchar\\], Query: \\[integer, varchar\\(50\\)\\]");
+            assertUpdate(
+                    convertToVarchar,
+                    format("INSERT INTO %s (key) VALUES '5'", table.getName()),
+                    1);
+            assertQuery(
+                    convertToVarchar,
+                    "SELECT * FROM " + table.getName(),
+                    format("VALUES ('1', NULL), ('2', %s), ('5', NULL)", prestoValue));
         }
+    }
+
+    private Session withUnsupportedType(UnsupportedTypeHandling unsupportedTypeHandling)
+    {
+        return Session.builder(getSession())
+                .setCatalogSessionProperty("postgresql", UNSUPPORTED_TYPE_HANDLING, unsupportedTypeHandling.name())
+                .build();
     }
 
     public static DataType<ZonedDateTime> prestoTimestampWithTimeZoneDataType()
@@ -902,16 +1039,16 @@ public class TestPostgreSqlTypeMapping
         return dataType(
                 "hstore",
                 getQueryRunner().getMetadata().getType(mapType(VARCHAR.getTypeSignature(), VARCHAR.getTypeSignature())),
-                value -> value.entrySet().stream()
-                        .flatMap(entry -> Stream.of(entry.getKey(), entry.getValue()))
-                        .map(string -> {
-                            if (string == null) {
-                                return "null";
-                            }
-                            return DataType.formatStringLiteral(string);
-                        })
-                        .collect(joining(",", "hstore(ARRAY[", "]::varchar[])")),
+                TestPostgreSqlTypeMapping::hstoreLiteral,
                 identity());
+    }
+
+    private static String hstoreLiteral(Map<String, String> value)
+    {
+        return value.entrySet().stream()
+                .flatMap(entry -> Stream.of(entry.getKey(), entry.getValue()))
+                .map(input -> (input == null) ? "null" : formatStringLiteral(input))
+                .collect(joining(",", "hstore(ARRAY[", "]::varchar[])"));
     }
 
     private DataType<Map<String, String>> varcharMapDataType()

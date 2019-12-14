@@ -63,6 +63,7 @@ public final class HiveSessionProperties
     private static final String ORC_OPTIMIZED_WRITER_MAX_STRIPE_SIZE = "orc_optimized_writer_max_stripe_size";
     private static final String ORC_OPTIMIZED_WRITER_MAX_STRIPE_ROWS = "orc_optimized_writer_max_stripe_rows";
     private static final String ORC_OPTIMIZED_WRITER_MAX_DICTIONARY_MEMORY = "orc_optimized_writer_max_dictionary_memory";
+    private static final String ORC_USE_COLUMN_NAME = "orc_use_column_names";
     private static final String HIVE_STORAGE_FORMAT = "hive_storage_format";
     private static final String COMPRESSION_CODEC = "compression_codec";
     private static final String RESPECT_TABLE_FORMAT = "respect_table_format";
@@ -226,6 +227,11 @@ public final class HiveSessionProperties
                         "ORC: Max dictionary memory",
                         orcWriterConfig.getDictionaryMaxMemory(),
                         false),
+                booleanProperty(
+                        ORC_USE_COLUMN_NAME,
+                        "Orc: Access ORC columns using names from the file",
+                        orcReaderConfig.isUseColumnNames(),
+                        false),
                 enumProperty(
                         HIVE_STORAGE_FORMAT,
                         "Default storage format for new tables or partitions",
@@ -315,7 +321,7 @@ public final class HiveSessionProperties
                         false),
                 booleanProperty(
                         OPTIMIZE_MISMATCHED_BUCKET_COUNT,
-                        "Experimenal: Enable optimization to avoid shuffle when bucket count is compatible but not the same",
+                        "Experimental: Enable optimization to avoid shuffle when bucket count is compatible but not the same",
                         hiveConfig.isOptimizeMismatchedBucketCount(),
                         false),
                 booleanProperty(
@@ -442,6 +448,11 @@ public final class HiveSessionProperties
         return session.getProperty(ORC_OPTIMIZED_WRITER_MAX_DICTIONARY_MEMORY, DataSize.class);
     }
 
+    public static boolean isUseOrcColumnNames(ConnectorSession session)
+    {
+        return session.getProperty(ORC_USE_COLUMN_NAME, Boolean.class);
+    }
+
     public static HiveStorageFormat getHiveStorageFormat(ConnectorSession session)
     {
         return session.getProperty(HIVE_STORAGE_FORMAT, HiveStorageFormat.class);
@@ -467,6 +478,11 @@ public final class HiveSessionProperties
         return session.getProperty(PARQUET_USE_COLUMN_NAME, Boolean.class);
     }
 
+    /**
+     * @deprecated this can mask correctness issues
+     */
+    // TODO remove
+    @Deprecated
     public static boolean isFailOnCorruptedParquetStatistics(ConnectorSession session)
     {
         return session.getProperty(PARQUET_FAIL_WITH_CORRUPTED_STATISTICS, Boolean.class);

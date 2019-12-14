@@ -24,7 +24,6 @@ import io.prestosql.metadata.Split;
 import io.prestosql.operator.WorkProcessor.Transformation;
 import io.prestosql.operator.WorkProcessor.TransformationState;
 import io.prestosql.operator.WorkProcessorAssertion.Transform;
-import io.prestosql.operator.WorkProcessorOperatorAdapter.ProcessorContext;
 import io.prestosql.spi.Page;
 import io.prestosql.spi.connector.UpdatablePageSource;
 import io.prestosql.sql.planner.plan.PlanNodeId;
@@ -235,7 +234,7 @@ public class TestWorkProcessorPipelineSourceOperator
         return getOnlyElement(rowPagesBuilder(BIGINT).addSequencePage(pageNumber, pageNumber).build());
     }
 
-    private class TestWorkProcessorSourceOperatorFactory
+    private static class TestWorkProcessorSourceOperatorFactory
             implements WorkProcessorSourceOperatorFactory, SourceOperatorFactory
     {
         final int operatorId;
@@ -300,7 +299,7 @@ public class TestWorkProcessorPipelineSourceOperator
         }
     }
 
-    private class TestWorkProcessorSourceOperator
+    private static class TestWorkProcessorSourceOperator
             implements WorkProcessorSourceOperator
     {
         final WorkProcessor<Page> pages;
@@ -375,7 +374,7 @@ public class TestWorkProcessorPipelineSourceOperator
         }
     }
 
-    private class TestWorkProcessorOperatorFactory
+    private static class TestWorkProcessorOperatorFactory
             implements WorkProcessorOperatorFactory, OperatorFactory
     {
         final int operatorId;
@@ -434,7 +433,7 @@ public class TestWorkProcessorPipelineSourceOperator
         }
     }
 
-    private class TestWorkProcessorOperator
+    private static class TestWorkProcessorOperator
             implements WorkProcessorOperator
     {
         final WorkProcessor<Page> pages;
@@ -467,7 +466,7 @@ public class TestWorkProcessorPipelineSourceOperator
         }
     }
 
-    private class TestOperatorInfo
+    private static class TestOperatorInfo
             implements OperatorInfo
     {
         int count;

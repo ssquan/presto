@@ -46,9 +46,11 @@ presto-product-tests/bin/run_on_docker.sh \
     -g two_hives \
     || exit_code=1
 
-presto-product-tests/bin/run_on_docker.sh \
+env HADOOP_BASE_IMAGE="not-used" TESTS_HIVE_VERSION_MAJOR="3" TESTS_HIVE_VERSION_MINOR="1" \
+    presto-product-tests/bin/run_on_docker.sh \
     singlenode-hdp3 \
     -g hdp3_only,storage_formats,hive_transactional \
     || exit_code=1
 
+echo "$0: exiting with ${exit_code}"
 exit "${exit_code}"

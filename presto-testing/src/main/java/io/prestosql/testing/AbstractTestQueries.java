@@ -48,6 +48,7 @@ import java.util.stream.IntStream;
 
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.collect.Iterables.getOnlyElement;
+import static io.prestosql.SystemSessionProperties.IGNORE_DOWNSTREAM_PREFERENCES;
 import static io.prestosql.connector.informationschema.InformationSchemaTable.INFORMATION_SCHEMA;
 import static io.prestosql.operator.scalar.ApplyFunction.APPLY_FUNCTION;
 import static io.prestosql.operator.scalar.InvokeFunction.INVOKE_FUNCTION;
@@ -133,10 +134,13 @@ public abstract class AbstractTestQueries
 
     private static final String UNSUPPORTED_CORRELATED_SUBQUERY_ERROR_MSG = "line .*: Given correlated subquery is not supported";
 
+    @Deprecated
     protected AbstractTestQueries(QueryRunnerSupplier supplier)
     {
         super(supplier);
     }
+
+    protected AbstractTestQueries() {}
 
     @Test
     public void testParsingError()
@@ -2460,7 +2464,7 @@ public abstract class AbstractTestQueries
         assertEquals(
                 getOnlyElement(result.getOnlyColumnAsSet()),
                 "SET SESSION foo = ?\n" +
-                "Parameters: [7]");
+                        "Parameters: [7]");
     }
 
     @Test
@@ -2602,7 +2606,7 @@ public abstract class AbstractTestQueries
     @Test
     public void testAtTimeZone()
     {
-        // TODO the expected values here are non-sensical due to https://github.com/prestodb/presto/issues/7122
+        // TODO the expected values here are non-sensical due to https://github.com/prestosql/presto/issues/37
         assertEquals(computeScalar("SELECT TIMESTAMP '2012-10-31 01:00' AT TIME ZONE INTERVAL '07:09' hour to minute"), zonedDateTime("2012-10-30 18:09:00.000 +07:09"));
         assertEquals(computeScalar("SELECT TIMESTAMP '2012-10-31 01:00' AT TIME ZONE 'Asia/Oral'"), zonedDateTime("2012-10-30 16:00:00.000 Asia/Oral"));
         assertEquals(computeScalar("SELECT MIN(x) AT TIME ZONE 'America/Chicago' FROM (VALUES TIMESTAMP '1970-01-01 00:01:00+00:00') t(x)"), zonedDateTime("1969-12-31 18:01:00.000 America/Chicago"));
@@ -5343,5 +5347,27 @@ public abstract class AbstractTestQueries
         assertEquals(doubleColumnResult.getRowCount(), 1);
         assertEquals(doubleColumnResult.getTypes().get(0), DOUBLE);
         assertEquals(doubleColumnResult.getMaterializedRows().get(0).getField(0), 1.0);
+    }
+
+    @Test
+    public void testForcePartitioningMarkDistinctInput()
+    {
+        Session session = Session.builder(getSession())
+                .setSystemProperty(IGNORE_DOWNSTREAM_PREFERENCES, "false")
+                .build();
+
+        assertQuery(
+                session,
+                "SELECT count(orderkey), count(distinct orderkey), custkey , count(1) FROM ( SELECT * FROM (VALUES (1, 2)) as t(custkey, orderkey) UNION ALL SELECT 3, 4) GROUP BY 3",
+                "VALUES (1, 1, 1, 1), (1, 1, 3, 1)");
+
+        session = Session.builder(getSession())
+                .setSystemProperty(IGNORE_DOWNSTREAM_PREFERENCES, "true")
+                .build();
+
+        assertQuery(
+                session,
+                "SELECT count(orderkey), count(distinct orderkey), custkey , count(1) FROM ( SELECT * FROM (VALUES (1, 2)) as t(custkey, orderkey) UNION ALL SELECT 3, 4) GROUP BY 3",
+                "VALUES (1, 1, 1, 1), (1, 1, 3, 1)");
     }
 }

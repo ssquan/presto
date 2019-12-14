@@ -16,8 +16,8 @@ package io.prestosql.plugin.kafka;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.prestosql.Session;
-import io.prestosql.plugin.kafka.util.EmbeddedKafka;
 import io.prestosql.plugin.kafka.util.TestUtils;
+import io.prestosql.plugin.kafka.util.TestingKafka;
 import io.prestosql.spi.connector.SchemaTableName;
 import io.prestosql.spi.type.BigintType;
 import io.prestosql.testing.MaterializedResult;
@@ -32,8 +32,8 @@ import org.testng.annotations.Test;
 import java.util.Properties;
 import java.util.UUID;
 
-import static io.prestosql.plugin.kafka.util.EmbeddedKafka.CloseableProducer;
 import static io.prestosql.plugin.kafka.util.TestUtils.createEmptyTopicDescription;
+import static io.prestosql.plugin.kafka.util.TestingKafka.CloseableProducer;
 import static io.prestosql.testing.TestingSession.testSessionBuilder;
 import static io.prestosql.testing.assertions.Assert.assertEquals;
 
@@ -45,31 +45,30 @@ public class TestManySegments
             .setSchema("default")
             .build();
 
-    private EmbeddedKafka embeddedKafka;
+    private TestingKafka testingKafka;
     private String topicName;
     private StandaloneQueryRunner queryRunner;
 
     @BeforeClass
     public void startKafka()
-            throws Exception
     {
-        embeddedKafka = EmbeddedKafka.createEmbeddedKafka();
-        embeddedKafka.start();
+        testingKafka = new TestingKafka();
+        testingKafka.start();
 
         topicName = "test_" + UUID.randomUUID().toString().replaceAll("-", "_");
 
         Properties topicProperties = new Properties();
         topicProperties.setProperty("segment.bytes", "1048576");
 
-        embeddedKafka.createTopics(1, 1, topicProperties, topicName);
+        testingKafka.createTopics(1, 1, topicProperties, topicName);
 
-        try (CloseableProducer<Long, Object> producer = embeddedKafka.createProducer()) {
+        try (CloseableProducer<Long, Object> producer = testingKafka.createProducer()) {
             int jMax = 10_000;
             int iMax = 100_000 / jMax;
             for (long i = 0; i < iMax; i++) {
                 ImmutableList.Builder<KeyedMessage<Long, Object>> builder = ImmutableList.builder();
                 for (long j = 0; j < jMax; j++) {
-                    builder.add(new KeyedMessage<Long, Object>(topicName, i, ImmutableMap.of("id", Long.toString(i * iMax + j), "value", UUID.randomUUID().toString())));
+                    builder.add(new KeyedMessage<>(topicName, i, ImmutableMap.of("id", Long.toString(i * iMax + j), "value", UUID.randomUUID().toString())));
                 }
                 producer.send(builder.build());
             }
@@ -78,19 +77,17 @@ public class TestManySegments
 
     @AfterClass(alwaysRun = true)
     public void stopKafka()
-            throws Exception
     {
-        embeddedKafka.close();
-        embeddedKafka = null;
+        testingKafka.close();
+        testingKafka = null;
     }
 
     @BeforeMethod
     public void spinUp()
-            throws Exception
     {
         this.queryRunner = new StandaloneQueryRunner(SESSION);
 
-        TestUtils.installKafkaPlugin(embeddedKafka, queryRunner,
+        TestUtils.installKafkaPlugin(testingKafka, queryRunner,
                 ImmutableMap.<SchemaTableName, KafkaTopicDescription>builder()
                         .put(createEmptyTopicDescription(topicName, new SchemaTableName("default", topicName)))
                         .build());

@@ -10,7 +10,7 @@ services:
     networks:
       default:
         aliases:
-         - presto-master.docker.cluster
+          - presto-master.docker.cluster
 
   presto-worker-1:
     domainname: docker.cluster
@@ -18,11 +18,12 @@ services:
     extends:
       file: ../common/standard.yml
       service: java-8-base
+    image: 'prestodev/centos7-oj11:${DOCKER_IMAGES_VERSION}'
     command: /docker/presto-product-tests/conf/docker/files/presto-launcher-wrapper.sh multinode-tls-worker run
     networks:
       default:
         aliases:
-         - presto-worker-1.docker.cluster
+          - presto-worker-1.docker.cluster
     depends_on:
       - presto-master
     volumes_from:
@@ -34,11 +35,12 @@ services:
     extends:
       file: ../common/standard.yml
       service: java-8-base
+    image: 'prestodev/centos7-oj11:${DOCKER_IMAGES_VERSION}'
     command: /docker/presto-product-tests/conf/docker/files/presto-launcher-wrapper.sh multinode-tls-worker run
     networks:
       default:
         aliases:
-         - presto-worker-2.docker.cluster
+          - presto-worker-2.docker.cluster
     depends_on:
       - presto-master
     volumes_from:

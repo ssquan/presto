@@ -22,7 +22,6 @@ import io.prestosql.operator.SetBuilderOperator.SetSupplier;
 import io.prestosql.operator.WorkProcessor.TransformationState;
 import io.prestosql.operator.WorkProcessorOperatorAdapter.AdapterWorkProcessorOperator;
 import io.prestosql.operator.WorkProcessorOperatorAdapter.AdapterWorkProcessorOperatorFactory;
-import io.prestosql.operator.WorkProcessorOperatorAdapter.ProcessorContext;
 import io.prestosql.spi.Page;
 import io.prestosql.spi.block.Block;
 import io.prestosql.spi.block.BlockBuilder;
@@ -169,7 +168,7 @@ public class HashSemiJoinOperator
     {
     }
 
-    private class SemiJoinPages
+    private static class SemiJoinPages
             implements WorkProcessor.Transformation<Page, Page>
     {
         private final int probeJoinChannel;

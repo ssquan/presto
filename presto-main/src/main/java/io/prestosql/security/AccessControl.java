@@ -42,11 +42,6 @@ public interface AccessControl
     Set<String> filterCatalogs(Identity identity, Set<String> catalogs);
 
     /**
-     * Check whether identity is allowed to access catalog
-     */
-    void checkCanAccessCatalog(Identity identity, String catalogName);
-
-    /**
      * Check if identity is allowed to create the specified schema.
      *
      * @throws io.prestosql.spi.security.AccessDeniedException if not allowed
@@ -183,6 +178,13 @@ public interface AccessControl
      * @throws io.prestosql.spi.security.AccessDeniedException if not allowed
      */
     void checkCanCreateView(SecurityContext context, QualifiedObjectName viewName);
+
+    /**
+     * Check if identity is allowed to rename the specified view.
+     *
+     * @throws io.prestosql.spi.security.AccessDeniedException if not allowed
+     */
+    void checkCanRenameView(SecurityContext context, QualifiedObjectName viewName, QualifiedObjectName newViewName);
 
     /**
      * Check if identity is allowed to drop the specified view.

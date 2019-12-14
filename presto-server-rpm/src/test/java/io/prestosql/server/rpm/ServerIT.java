@@ -15,6 +15,8 @@ package io.prestosql.server.rpm;
 
 import org.testcontainers.containers.BindMode;
 import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.shaded.com.google.common.collect.ImmutableList;
+import org.testcontainers.shaded.com.google.common.collect.ImmutableSet;
 import org.testng.annotations.Parameters;
 import org.testng.annotations.Test;
 
@@ -24,15 +26,17 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
-import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import static java.lang.String.format;
 import static java.sql.DriverManager.getConnection;
 import static java.util.Arrays.asList;
+import static java.util.Objects.requireNonNull;
 import static org.testcontainers.containers.wait.strategy.Wait.forLogMessage;
 import static org.testng.Assert.assertEquals;
 
+@Test(singleThreaded = true)
 public class ServerIT
 {
     @Parameters("rpm")
@@ -40,7 +44,7 @@ public class ServerIT
     public void testWithJava8(String rpm)
             throws Exception
     {
-        testServer("prestodev/centos7-oj8", rpm);
+        testServer("prestodev/centos7-oj8", rpm, "1.8");
     }
 
     @Parameters("rpm")
@@ -48,10 +52,10 @@ public class ServerIT
     public void testWithJava11(String rpm)
             throws Exception
     {
-        testServer("prestodev/centos7-oj11", rpm);
+        testServer("prestodev/centos7-oj11", rpm, "11");
     }
 
-    private static void testServer(String baseImage, String rpmHostPath)
+    private static void testServer(String baseImage, String rpmHostPath, String expectedJavaVersion)
             throws Exception
     {
         String rpm = "/" + new File(rpmHostPath).getName();
@@ -65,6 +69,10 @@ public class ServerIT
                 "connector.name=hive-hadoop2\n" +
                 "hive.metastore.uri=thrift://localhost:9083\n" +
                 "EOT\n" +
+                // create JMX catalog file
+                "cat > /etc/presto/catalog/jmx.properties <<\"EOT\"\n" +
+                "connector.name=jmx\n" +
+                "EOT\n" +
                 // start server
                 "/etc/init.d/presto start\n" +
                 // allow tail to work with Docker's non-local file system
@@ -76,23 +84,64 @@ public class ServerIT
                     .withCommand("sh", "-xeuc", command)
                     .waitingFor(forLogMessage(".*SERVER STARTED.*", 1).withStartupTimeout(Duration.ofMinutes(5)))
                     .start();
-
-            assertServer(container.getContainerIpAddress(), container.getMappedPort(8080));
+            QueryRunner queryRunner = new QueryRunner(container.getContainerIpAddress(), container.getMappedPort(8080));
+            assertEquals(queryRunner.execute("SHOW CATALOGS"), ImmutableSet.of(asList("system"), asList("hive"), asList("jmx")));
+            // TODO remove usage of assertEventually once https://github.com/prestosql/presto/issues/2214 is fixed
+            assertEventually(
+                    Duration.ofMinutes(1),
+                    () -> assertEquals(queryRunner.execute("SELECT specversion FROM jmx.current.\"java.lang:type=runtime\""), ImmutableSet.of(asList(expectedJavaVersion))));
         }
     }
 
-    private static void assertServer(String host, int port)
-            throws SQLException
+    private static class QueryRunner
     {
-        String url = format("jdbc:presto://%s:%s", host, port);
-        try (Connection connection = getConnection(url, "test", null);
-                Statement statement = connection.createStatement();
-                ResultSet rs = statement.executeQuery("SHOW CATALOGS")) {
-            Set<String> catalogs = new HashSet<>();
-            while (rs.next()) {
-                catalogs.add(rs.getString(1));
+        private final String host;
+        private final int port;
+
+        private QueryRunner(String host, int port)
+        {
+            this.host = requireNonNull(host, "host is null");
+            this.port = port;
+        }
+
+        public Set<List<String>> execute(String sql)
+        {
+            try (Connection connection = getConnection(format("jdbc:presto://%s:%s", host, port), "test", null);
+                    Statement statement = connection.createStatement()) {
+                try (ResultSet resultSet = statement.executeQuery(sql)) {
+                    ImmutableSet.Builder<List<String>> rows = ImmutableSet.builder();
+                    final int columnCount = resultSet.getMetaData().getColumnCount();
+                    while (resultSet.next()) {
+                        ImmutableList.Builder<String> row = ImmutableList.builder();
+                        for (int column = 1; column <= columnCount; column++) {
+                            row.add(resultSet.getString(column));
+                        }
+                        rows.add(row.build());
+                    }
+                    return rows.build();
+                }
             }
-            assertEquals(catalogs, new HashSet<>(asList("system", "hive")));
+            catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private static void assertEventually(Duration timeout, Runnable assertion)
+            throws Exception
+    {
+        long start = System.nanoTime();
+        while (!Thread.currentThread().isInterrupted()) {
+            try {
+                assertion.run();
+                return;
+            }
+            catch (Exception | AssertionError e) {
+                if (Duration.ofSeconds(0, System.nanoTime() - start).compareTo(timeout) > 0) {
+                    throw e;
+                }
+            }
+            Thread.sleep(50);
         }
     }
 }

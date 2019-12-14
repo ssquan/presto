@@ -13,7 +13,6 @@
  */
 package io.prestosql.metadata;
 
-import com.google.common.collect.Multimap;
 import io.airlift.slice.Slice;
 import io.prestosql.Session;
 import io.prestosql.connector.CatalogName;
@@ -28,7 +27,6 @@ import io.prestosql.spi.connector.ColumnHandle;
 import io.prestosql.spi.connector.ColumnMetadata;
 import io.prestosql.spi.connector.ConnectorCapabilities;
 import io.prestosql.spi.connector.ConnectorOutputMetadata;
-import io.prestosql.spi.connector.ConnectorTableHandle;
 import io.prestosql.spi.connector.ConnectorTableMetadata;
 import io.prestosql.spi.connector.ConnectorViewDefinition;
 import io.prestosql.spi.connector.Constraint;
@@ -230,11 +228,6 @@ public interface Metadata
     void finishStatisticsCollection(Session session, AnalyzeTableHandle tableHandle, Collection<ComputedStatistics> computedStatistics);
 
     /**
-     * Start a SELECT/UPDATE/INSERT/DELETE query
-     */
-    void beginQuery(Session session, Multimap<CatalogName, ConnectorTableHandle> connectors);
-
-    /**
      * Cleanup after a query. This is the very last notification after the query finishes, regardless if it succeeds or fails.
      * An exception thrown in this method will not affect the result of the query.
      */
@@ -311,6 +304,11 @@ public interface Metadata
      * Creates the specified view with the specified view definition.
      */
     void createView(Session session, QualifiedObjectName viewName, ConnectorViewDefinition definition, boolean replace);
+
+    /**
+     * Rename the specified view.
+     */
+    void renameView(Session session, QualifiedObjectName existingViewName, QualifiedObjectName newViewName);
 
     /**
      * Drops the specified view.

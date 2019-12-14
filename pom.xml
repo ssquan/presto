@@ -1021,8 +1021,8 @@
                 <version>hadoop2-${dep.gcs.version}</version>
                 <exclusions>
                     <exclusion>
-                        <artifactId>log4j</artifactId>
                         <groupId>log4j</groupId>
+                        <artifactId>log4j</artifactId>
                     </exclusion>
                     <exclusion>
                         <groupId>org.slf4j</groupId>
@@ -1049,12 +1049,12 @@
                 <version>3.4.13</version>
                 <exclusions>
                     <exclusion>
-                        <artifactId>jline</artifactId>
                         <groupId>jline</groupId>
+                        <artifactId>jline</artifactId>
                     </exclusion>
                     <exclusion>
-                        <artifactId>log4j</artifactId>
                         <groupId>log4j</groupId>
+                        <artifactId>log4j</artifactId>
                     </exclusion>
                     <exclusion>
                         <groupId>org.slf4j</groupId>
@@ -1159,12 +1159,6 @@
                 <groupId>org.apache.lucene</groupId>
                 <artifactId>lucene-analyzers-common</artifactId>
                 <version>7.2.1</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>org.apache.lucene</groupId>
-                        <artifactId>lucene-core</artifactId>
-                    </exclusion>
-                </exclusions>
             </dependency>
 
             <dependency>
@@ -1251,8 +1245,10 @@
 
             <dependency>
                 <groupId>org.testcontainers</groupId>
-                <artifactId>testcontainers</artifactId>
+                <artifactId>testcontainers-bom</artifactId>
                 <version>1.12.3</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -1460,7 +1456,7 @@
                                 <arg>-J-Xbootclasspath/p:${settings.localRepository}/com/google/errorprone/javac/${javac.version}/javac-${javac.version}.jar</arg>
                                 <arg>-XDcompilePolicy=simple</arg>
                                 <!-- TODO enable more checks, i.e. remove "-XepDisableAllChecks" -->
-                                <arg>-Xplugin:ErrorProne -XepExcludedPaths:.*/target/generated-(|test-)sources/.* -XepDisableAllChecks -Xep:MissingOverride:ERROR</arg>
+                                <arg>-Xplugin:ErrorProne -XepExcludedPaths:.*/target/generated-(|test-)sources/.* -XepDisableAllChecks -Xep:MissingOverride:ERROR -Xep:ClassCanBeStatic:ERROR -Xep:ArrayToString:ERROR</arg>
                             </compilerArgs>
                             <annotationProcessorPaths>
                                 <path>
