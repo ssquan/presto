@@ -358,7 +358,7 @@ public final class JoniRegexpFunctions
         while (true) {
             int offset = matcher.search(nextStart, source.length(), Option.DEFAULT);
             // Check whether offset is negative, offset is -1 if no pattern was found or -2 if process was interrupted
-            if (offset < 0) {
+            if (offset < 0 || offset >= source.length()) {
                 return -1;
             }
 

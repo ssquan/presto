@@ -93,21 +93,21 @@ with a few notable exceptions:
     Returns the index of the first occurrence of ``pattern`` in ``string``, counting from 1.
     Returns -1 if not found::
 
-        SELECT regexp_position('9102, say good bye', '\s*[a-z]+\s*'); -- 7
+        SELECT regexp_position('9102, say good bye', '\s*[a-z]+\s*'); -- 6
 
 .. function:: regexp_position(string, pattern, start) -> integer
 
     Returns the first occurrence of ``pattern`` in ``string``, starting from ``start`` (include ``start``).
     Returns -1 if not found::
 
-        SELECT regexp_position('natasha, 9102, miss you', '\s*[a-z]+\s*', 10); -- 16
+        SELECT regexp_position('natasha, 9102, miss you', '\s*[a-z]+\s*', 10); -- 15
 
 .. function:: regexp_position(string, pattern, start, occurrence) -> integer
 
     Returns the ``occurrence``-th occurrence of ``pattern`` in ``string``, starting from ``start`` (include ``start``).
     Returns -1 if not found::
 
-        SELECT regexp_position('natasha, 9102, miss you', '\s*[a-z]+\s*', 10, 2); -- 21
+        SELECT regexp_position('natasha, 9102, miss you', '\s*[a-z]+\s*', 10, 2); -- 20
 
 .. function:: regexp_replace(string, pattern) -> varchar
 

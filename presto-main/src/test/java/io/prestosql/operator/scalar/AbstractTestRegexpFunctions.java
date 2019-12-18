@@ -256,6 +256,9 @@ public abstract class AbstractTestRegexpFunctions
 
         // empty pattern
         assertFunction("REGEXP_COUNT('abcd', '')", IntegerType.INTEGER, 4);
+
+        // sql in document
+        assertFunction("REGEXP_COUNT('1a 2b 14m', '\\s*[a-z]+\\s*')", IntegerType.INTEGER, 3);
     }
 
     @Test
@@ -276,14 +279,15 @@ public abstract class AbstractTestRegexpFunctions
         assertFunction("REGEXP_POSITION('a1b2c3d', '\\d', 4, 3)", IntegerType.INTEGER, -1);
 
         // empty pattern
-        assertInvalidFunction("REGEXP_POSITION('a1b2c3d', '')", INVALID_FUNCTION_ARGUMENT);
-        assertInvalidFunction("REGEXP_POSITION('a1b2c3d', '', 1)", INVALID_FUNCTION_ARGUMENT);
-        assertInvalidFunction("REGEXP_POSITION('a1b2c3d', '', 1, 2)", INVALID_FUNCTION_ARGUMENT);
-        assertInvalidFunction("REGEXP_POSITION('a1b2c3d', '', 2, 2)", INVALID_FUNCTION_ARGUMENT);
-        assertInvalidFunction("REGEXP_POSITION('a1b2c3d', '', 4, 2)", INVALID_FUNCTION_ARGUMENT);
+        assertFunction("REGEXP_POSITION('a1b2c3d', '')", IntegerType.INTEGER, 1);
+        assertFunction("REGEXP_POSITION('a1b2c3d', '', 2)", IntegerType.INTEGER, 2);
+        assertFunction("REGEXP_POSITION('a1b2c3d', '', 2, 2)", IntegerType.INTEGER, 3);
+        assertFunction("REGEXP_POSITION('a1b2c3d', '', 2, 6)", IntegerType.INTEGER, 7);
+        assertFunction("REGEXP_POSITION('a1b2c3d', '', 2, 8)", IntegerType.INTEGER, -1);
 
         //Non-unicode string
         assertFunction("REGEXP_POSITION('行成于思str而毁123于随', '于', 3, 2)", IntegerType.INTEGER, 13);
+        assertFunction("REGEXP_POSITION('行成于思str而毁123于随', '', 3, 2)", IntegerType.INTEGER, 4);
 
         // empty source
         assertFunction("REGEXP_POSITION('', ',')", IntegerType.INTEGER, -1);
@@ -302,5 +306,10 @@ public abstract class AbstractTestRegexpFunctions
 
         assertInvalidFunction("REGEXP_POSITION('有朋$%X自9远方9来', '来', 1, 0)", INVALID_FUNCTION_ARGUMENT);
         assertInvalidFunction("REGEXP_POSITION('有朋$%X自9远方9来', '来', 1, -1)", INVALID_FUNCTION_ARGUMENT);
+
+        // sql in document
+        assertFunction("REGEXP_POSITION('9102, say good bye', '\\s*[a-z]+\\s*')", IntegerType.INTEGER, 6);
+        assertFunction("REGEXP_POSITION('natasha, 9102, miss you', '\\s*[a-z]+\\s*', 10)", IntegerType.INTEGER, 15);
+        assertFunction("REGEXP_POSITION('natasha, 9102, miss you', '\\s*[a-z]+\\s*', 10, 2)", IntegerType.INTEGER, 20);
     }
 }
